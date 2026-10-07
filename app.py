@@ -16,6 +16,7 @@ try:
     from waitress import serve
     from filelock import FileLock, Timeout
     import torch
+    import cv2
     from core.queue_manager import QueueManager
 except (ImportError, OSError) as exc:
     print(f'Missing dependency: {exc}. Run install.bat, or pip install -r requirements.txt.')

@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 models/*.pth
+models/*.pb
 models/*.part
 output/
 temp/

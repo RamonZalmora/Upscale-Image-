@@ -1,6 +1,6 @@
 # Etsy AI Image Upscaler
 
-Aplikasi lokal untuk batch JPG / JPEG / PNG / WEBP menggunakan **Real-ESRGAN**.
+Aplikasi lokal untuk batch JPG / JPEG / PNG / WEBP dengan pilihan **Real-ESRGAN** (detail tinggi) atau **FSRCNN** (AI ringan).
 Semua gambar diproses di komputer Anda. Tidak membutuhkan akun atau API berbayar.
 
 ## Windows 10 / 11
@@ -15,7 +15,7 @@ run.bat
 ```
 
 `install.bat` membuat virtual environment, memasang dependensi, mengunduh model
-resmi (~4.7 MB), memverifikasi SHA-256, dan memeriksa load model.
+resmi Real-ESRGAN (~4.7 MB) dan FSRCNN (~39 KB), memverifikasi SHA-256, dan memeriksa load kedua model.
 PyTorch Windows membutuhkan ruang disk beberapa GB dan internet saat instalasi.
 `run.bat` membuka browser otomatis. Biarkan jendela CMD tetap terbuka.
 Jika browser tidak terbuka, akses **http://127.0.0.1:7860** di komputer tersebut.
@@ -56,12 +56,46 @@ terhadap folder project. Hasil ditulis di `<folder>/completed/`; default
 `output/completed/`. Penamaan collision-safe, file asli tidak ditimpa. Custom Base
 Name menggunakan nomor urut persisten seperti `moonlit-library-001.png`.
 
+## Mode ringan untuk laptop dan file kecil
+
+Pilih preset **RINGAN LAPTOP** untuk workflow hemat proses:
+
+- **AI Ringan · detail rendah (FSRCNN)**, CPU maksimal **2 thread**, tanpa self-ensemble.
+- Default **3.5×**, compression Balanced, Keep Original Format, ukuran otomatis aktif.
+- Skala tersedia: **2×, 2.5×, 3×, 3.5×, 4×, 4.5×**. Ukuran piksel tidak dikurangi
+  untuk mengejar target file; pecahan setengah piksel dibulatkan ke atas.
+- FSRCNN adalah model neural super-resolution kecil yang berbeda dari Real-ESRGAN.
+  AI native **2×**, kemudian Lanczos menyesuaikan ke skala pilihan. Hasil lebih lembut
+  dan detail tambahan lebih sedikit. Skala di atas 2× tidak berarti inference AI
+  native 3.5×/4.5×. Ukuran tetap mengikuti skala, tanpa menjalankan AI berulang.
+- Target otomatis = **2.5× ukuran file asli, maksimal 4 MB**, minimum 0.1 MB.
+  Contoh JPG 1.5 MB → target 3.75 MB. Hasil boleh lebih kecil, tidak ditambah padding.
+  Matikan Ukuran Otomatis untuk memasukkan target manual. Target manual berlaku jika
+  disuplai bersama auto_size melalui API; compression OFF menonaktifkan semua target.
+- JPG mode ringan memakai chroma **4:2:0**, quality awal 90, pencarian biner bertarget,
+  floor **85 / 72 / 65** untuk Light / Balanced / Maximum. Detail warna halus dapat
+  berkurang; pilih model detail bila lebih mengutamakan ketajaman. WEBP memakai
+  encoder method 2. PNG tetap lossless (compression level 4), tidak otomatis ke JPG.
+- Target adalah best effort. Bila batas quality tidak cukup, output tetap disimpan
+  dengan warning dan bisa lebih dari target. Gambar transparan tetap PNG/WEBP.
+- Uji sintetis: JPG **1.41 MB**, 1250×1000, **3.5×** → **4375×3500**, JPG **3.76 MB**
+  dengan Balanced. AI sekitar **1.3 detik** di CPU cloud pada satu pengukuran;
+  hasil/kecepatan laptop dan gambar lain dapat berbeda. Ukuran file tidak berbanding
+  lurus dengan skala piksel (3.5× berarti 12.25× jumlah piksel).
+- Beban berkurang, tetapi laptop masih bisa hangat; mode ini tidak menjamin suhu
+  tertentu. Settings model/target/skala ikut tersimpan dalam antrean dan recovery.
+
+Untuk memperbarui instalasi lama, tutup aplikasi dan jalankan `install.bat` lagi
+setelah mengganti kode (dependensi OpenCV baru diperlukan). Untuk ZIP, ekstrak ke
+folder baru, jalankan `install.bat` lalu `run.bat`. Jangan menimpa/menghapus folder
+output produksi Anda. Queue lama tanpa pilihan model dibaca sebagai Real-ESRGAN.
+
 ## AI dan kualitas
 
 - Inti pipeline adalah neural inference **Real-ESRGAN realesr-general-x4v3**,
   SRVGGNetCompact resmi, bukan resize-only atau generasi ulang gambar.
-- Model native **4×**. Untuk **2× / 3×**, hasil neural 4× diturunkan dengan Lanczos
-  ke dimensi tepat. Lanczos bukan pengganti inference AI.
+- Model Real-ESRGAN native **4×**. Untuk **2× / 2.5× / 3× / 3.5×**, hasil neural 4×
+  diturunkan dengan Lanczos ke dimensi tepat; **4.5×** diperbesar dari hasil AI 4×. Lanczos bukan pengganti inference AI.
 - **Super Cepat (AI Turbo)**: 1 inference AI tanpa self-ensemble, tile CPU/MPS
   256 pixel dan tile CUDA sampai 768 pixel untuk mengurangi pemrosesan overlap
   berulang. CUDA memakai FP16 otomatis; CPU/MPS tetap FP32. Tile tetap memakai
@@ -79,12 +113,14 @@ Name menggunakan nomor urut persisten seperti `moonlit-library-001.png`.
   untuk gambar besar; Fast tetap memakai AI yang sama.
 - Tile AUTO berdasarkan VRAM; padding 40 pixel melebihi receptive radius model.
   CUDA OOM mengurangi tile dan akhirnya mencoba CPU. Satu gambar diproses per worker.
-- Maksimum native output 100 megapixel (input sekitar 6.25 MP), demi membatasi RAM.
+- Maksimum output native dan final **100 megapixel**, input maksimum **25 MP**.
+  Pada model detail batas native membatasi input sekitar 6.25 MP; 4.5× membatasi
+  input sekitar 4.94 MP pada kedua model.
   Seluruh output satu gambar berada di RAM; bukan streaming tak terbatas.
 - Alpha PNG/WEBP dipertahankan dan di-resample sebagai mask coverage tanpa inference
   generatif. PNG compression lossless. Ekspor transparansi ke JPG ditolak;
   pilih PNG/WEBP. RGB di-upscale AI, alpha tidak dibuat ulang oleh AI.
-- JPEG memakai chroma 4:4:4. Smart compression turun bertahap dari quality 96 sampai
+- Pada model detail, JPEG memakai chroma 4:4:4. Smart compression turun bertahap dari quality 96 sampai
   floor 90/85/80. Target ukuran bersifat best effort; jika belum tercapai, aplikasi
   memberi warning dan mempertahankan kualitas. PNG tidak dikuantisasi untuk mengejar target.
 - 300 DPI hanya metadata: JFIF/PNG DPI atau EXIF resolution untuk WEBP, tanpa resize
@@ -119,7 +155,7 @@ app.py / install.bat / run.bat
 core/                 AI, export, antrean, image helpers
 templates/ + static/   UI lokal dark mode
 tests/                regression dan inference tests
-models/               bobot model (ignored Git)
+models/               bobot .pth dan .pb (ignored Git)
 output/completed/     aset final
 output/failed/        laporan kegagalan JSON
 logs/app.log          rotating log
@@ -147,7 +183,7 @@ pasang Microsoft Visual C++ Redistributable 2015–2022 (x64). Jangan menonaktif
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Test suite menguji inference model asli (2×/3×/4× dan tiga mode), konsistensi tile,
+Test suite menguji kedua model AI asli (2×/2.5×/3×/3.5×/4×/4.5× dan empat mode), konsistensi tile,
 PNG alpha, format JPG/WEBP, DPI, batas compression, queue/control/recovery,
 collision-safe naming, upload/download, ZIP final-only, dan proteksi request lokal.
 Test memakai folder sementara; output produksi tidak disentuh. Pada Windows:

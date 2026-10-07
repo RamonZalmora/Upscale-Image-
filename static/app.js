@@ -23,17 +23,24 @@ async function api(path, body, isForm=false) {
 function options() {
   const compress = $('compress').checked;
   return {scale:Number($('scale').value), quality:$('quality').value, dpi:$('dpi').checked, compress,
-    compression:$('compression').value, target_mb:compress && $('target').value ? Number($('target').value) : null,
-    format:$('format').value, base_name:$('naming').value === 'custom' ? $('base').value.trim() : '', output_dir:$('output-dir').value.trim()};
+    compression:$('compression').value, target_mb:compress && !$('auto-size').checked && $('target').value ? Number($('target').value) : null,
+    format:$('format').value, model:$('model').value, auto_size:compress && $('auto-size').checked, base_name:$('naming').value === 'custom' ? $('base').value.trim() : '', output_dir:$('output-dir').value.trim()};
 }
 function updateSettings() {
   $('compression-options').hidden = !$('compress').checked;
   $('base-label').hidden = $('naming').value !== 'custom';
+  const light = $('model').value === 'light';
+  $('quality').disabled = light;
+  if(light) $('quality').value = 'superfast';
+  $('target').disabled = $('auto-size').checked;
+  $('quality-hint').textContent = light ? 'Mode ringan selalu memakai satu proses AI tanpa penguatan detail tambahan.' : 'Super Cepat: 1 AI pass, tile lebih besar, FP16 pada CUDA. Tile size: AUTO.';
+  $('model-hint').textContent = light ? 'AI ringan, detail lembut, maksimal 2 thread CPU. Hasil AI native 2× disesuaikan ke skala pilihan Anda.' : 'Real-ESRGAN native 4× untuk detail lebih tinggi. 4.5× disesuaikan dari hasil AI 4×.';
   try {localStorage.setItem('upscaler-settings', JSON.stringify(options()));} catch (_) {}
 }
 function fillSettings(o) {
-  for(const id of ['scale','quality','format','compression']) if(o[id] !== undefined) $(id).value = o[id];
+  for(const id of ['scale','quality','format','compression','model']) if(o[id] !== undefined) $(id).value = o[id];
   for(const id of ['dpi','compress']) if(o[id] !== undefined) $(id).checked = Boolean(o[id]);
+  $('auto-size').checked = Boolean(o.auto_size);
   $('target').value = o.target_mb || '';
   $('base').value = o.base_name || ''; $('naming').value = o.base_name ? 'custom':'original';
   $('output-dir').value = o.output_dir || ''; updateSettings();
@@ -42,9 +49,12 @@ try {const stored=JSON.parse(localStorage.getItem('upscaler-settings')); if(stor
 for(const input of document.querySelectorAll('.settings input,.settings select')) input.addEventListener('change', updateSettings);
 $('preset').addEventListener('change', () => {
   const preset = $('preset').value;
-  if(preset === 'etsy') fillSettings({scale:2, quality:'high', dpi:true, compress:true, compression:'balanced', target_mb:2, format:'original'});
-  if(preset === 'max') fillSettings({scale:4, quality:'high', dpi:false, compress:false, compression:'balanced', target_mb:null, format:'original'});
+  if(preset === 'etsy') fillSettings({scale:2, quality:'high', dpi:true, compress:true, compression:'balanced', target_mb:2, format:'original',model:'detail',auto_size:false});
+  if(preset === 'laptop') fillSettings({scale:3.5,quality:'superfast',model:'light',dpi:false,compress:true,compression:'balanced',target_mb:null,auto_size:true,format:'original'});
+  if(preset === 'max') fillSettings({scale:4, quality:'high', dpi:false, compress:false, compression:'balanced', target_mb:null, format:'original',model:'detail',auto_size:false});
 });
+$('model').addEventListener('change', () => {if($('model').value === 'light') fillSettings({...options(),quality:'superfast',compress:true,auto_size:true,target_mb:null});});
+updateSettings();
 $('apply-settings').onclick = () => runControl('apply');
 $('add-images').onclick = event => {event.stopPropagation();$('files').click();};
 $('add-folder').onclick = event => {event.stopPropagation();$('folder').click();};
@@ -105,10 +115,10 @@ function renderRow(job) {
   const previewCell=el('td');if(job.width){const image=el('img');image.src=`/api/thumbnail/${job.id}`;image.alt=job.filename;image.className='preview';image.loading='lazy';previewCell.append(image);}tr.append(previewCell);
   const name=el('td',job.filename,'filename');if(job.output_name)name.append(el('span',job.output_name,'sub'));tr.append(name);
   const resolution=el('td',`${job.width} × ${job.height}`);resolution.append(el('span',`→ ${job.output_width} × ${job.output_height}`,'sub'));tr.append(resolution);
-  const scale=el('td',`${job.options.scale}×`);scale.append(el('span',job.options.quality === 'superfast' ? 'Super Cepat' : job.options.quality,'sub'));tr.append(scale);
+  const scale=el('td',`${job.options.scale}×`);scale.append(el('span',job.options.model === 'light' ? 'AI Ringan' : job.options.quality === 'superfast' ? 'Super Cepat' : job.options.quality,'sub'));tr.append(scale);
   const status=el('td');status.append(el('span',`${job.status} · ${job.progress}%`,`status ${job.status}`));const bar=el('progress');bar.max=100;bar.value=job.progress;bar.setAttribute('aria-label',`${job.filename} progress`);status.append(bar);
   if(job.error || job.warning)status.append(el('div',job.error || job.warning,'message'));tr.append(status);
-  const bytes=el('td',size(job.original_size));bytes.append(el('span',job.output_size?`→ ${size(job.output_size)}`:'→ —','sub'));tr.append(bytes);
+  const bytes=el('td',size(job.original_size));if(job.target_mb)bytes.append(el('span',`Target ≤ ${job.target_mb.toFixed(2)} MB`,'sub'));bytes.append(el('span',job.output_size?`→ ${size(job.output_size)}`:'→ —','sub'));tr.append(bytes);
   const cell=el('td'),actions=el('div','','actions');
   function button(label,action){const btn=el('button',label);btn.dataset.action=action;btn.dataset.id=job.id;actions.append(btn);}
   if(job.status==='Completed'){

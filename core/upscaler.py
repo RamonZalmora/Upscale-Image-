@@ -10,8 +10,12 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from .image_utils import SCALES, check_dimensions
+from .light_upscaler import LightUpscaler
 
 MODEL_URL = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth'
+LIGHT_MODEL_URL = 'https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/master/models/FSRCNN_x2.pb'
+LIGHT_MODEL_SHA256 = '366b33f0084c7b3f2bf6724f0a2c77bca94fcec9d7b6d72389d330073b380d5c'
 MODEL_SHA256 = '8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292'
 
 
@@ -23,6 +27,7 @@ class Upscaler:
     def __init__(self, model_dir):
         self.model_dir = Path(model_dir)
         self.model = None
+        self.light = LightUpscaler()
         self.device = self.detect_device()
         self.download_progress = 0
         self.lock = threading.Lock()
@@ -36,15 +41,18 @@ class Upscaler:
             return 'mps'
         return 'cpu'
 
-    def ensure_model(self, progress=lambda p: None, checkpoint=lambda: None):
+    def ensure_model(self, progress=lambda p: None, checkpoint=lambda: None, model_name='detail'):
         self.model_dir.mkdir(parents=True, exist_ok=True)
-        target = self.model_dir / 'realesr-general-x4v3.pth'
-        if target.exists() and self._hash(target) == MODEL_SHA256:
+        if model_name not in ('detail', 'light'):
+            raise ValueError('Unknown AI model')
+        filename, url, checksum = ('FSRCNN_x2.pb', LIGHT_MODEL_URL, LIGHT_MODEL_SHA256) if model_name == 'light' else ('realesr-general-x4v3.pth', MODEL_URL, MODEL_SHA256)
+        target = self.model_dir / filename
+        if target.exists() and self._hash(target) == checksum:
             self.download_progress = 100
             return target
         part = target.with_suffix('.part')
         try:
-            with urllib.request.urlopen(MODEL_URL, timeout=60) as response, part.open('wb') as stream:
+            with urllib.request.urlopen(url, timeout=60) as response, part.open('wb') as stream:
                 total = int(response.headers.get('Content-Length', 0))
                 downloaded = 0
                 while True:
@@ -56,7 +64,7 @@ class Upscaler:
                     downloaded += len(block)
                     self.download_progress = min(99, int(downloaded * 100 / total)) if total else 0
                     progress(self.download_progress)
-            if self._hash(part) != MODEL_SHA256:
+            if self._hash(part) != checksum:
                 raise RuntimeError('Model checksum mismatch. Download rejected.')
             os.replace(part, target)
             self.download_progress = 100
@@ -74,6 +82,7 @@ class Upscaler:
 
     def load(self, progress=lambda p: None, checkpoint=lambda: None):
         if self.model is not None:
+            self.device = next(self.model.parameters()).device.type
             return
         import torch
         from torch import nn
@@ -118,15 +127,29 @@ class Upscaler:
             return 256
         return 128 if self.device == 'cpu' else 192
 
-    def upscale(self, image, scale=2, quality='high', progress=lambda p: None, checkpoint=lambda: None):
+    def upscale(self, image, scale=2, quality='high', progress=lambda p: None, checkpoint=lambda: None, model_name='detail'):
         import torch
-        if scale not in (2, 3, 4) or quality not in ('superfast', 'fast', 'balanced', 'high'):
+        if isinstance(scale, bool) or scale not in SCALES or model_name not in ('detail', 'light') or quality not in ('superfast', 'fast', 'balanced', 'high'):
             raise ValueError('Invalid upscale settings')
         with self.lock:
-            self.load(lambda p: progress(p * .05), checkpoint)
             width, height = image.size
-            if width * height * 16 > 100_000_000:
-                raise ValueError('Native 4x output exceeds 100 megapixels; split this image first.')
+            dimensions = check_dimensions(width, height, scale, model_name)
+            if model_name == 'light':
+                path = self.ensure_model(lambda p: progress(p * .05), checkpoint, 'light')
+                self.light.load(path)
+                self.device = 'cpu'
+                rgb = np.asarray(image.convert('RGB'), dtype=np.uint8)
+                tile = 192
+                while True:
+                    try:
+                        result = self.light.upscale(rgb, progress, checkpoint, tile)
+                        break
+                    except MemoryError:
+                        if tile <= 32:
+                            raise RuntimeError('Insufficient RAM for this image')
+                        tile = max(32, tile // 2)
+                return self._finish_output(Image.fromarray(result), image, dimensions)
+            self.load(lambda p: progress(p * .05), checkpoint)
             rgb = np.asarray(image.convert('RGB'), dtype=np.float32) / 255
             tile = self.tile_size(quality)
             while True:
@@ -145,19 +168,23 @@ class Upscaler:
                         self.device = 'cpu'
                         self.model.to('cpu')
                         tile = 64
-            output = Image.fromarray(result)
-            # Native neural 4x output is reduced for exact 2x/3x dimensions.
-            if scale != 4:
-                output = output.resize((width * scale, height * scale), Image.Resampling.LANCZOS)
-            if 'A' in image.getbands() or 'transparency' in image.info:
-                # Alpha is coverage, not texture; deterministic resampling avoids AI hallucinations.
-                alpha = image.convert('RGBA').getchannel('A').resize(output.size, Image.Resampling.LANCZOS)
-                output.putalpha(alpha)
-            if image.info.get('icc_profile'):
-                output.info['icc_profile'] = image.info['icc_profile']
+            output = self._finish_output(Image.fromarray(result), image, dimensions)
             if self.device == 'cuda':
                 torch.cuda.empty_cache()
             return output
+
+    @staticmethod
+    def _finish_output(output, image, dimensions):
+        # Fractional scales resample neural results, never replace AI inference.
+        if output.size != dimensions:
+            output = output.resize(dimensions, Image.Resampling.LANCZOS)
+        if 'A' in image.getbands() or 'transparency' in image.info:
+            # Alpha is coverage, not texture; deterministic resampling avoids AI hallucinations.
+            alpha = image.convert('RGBA').getchannel('A').resize(output.size, Image.Resampling.LANCZOS)
+            output.putalpha(alpha)
+        if image.info.get('icc_profile'):
+            output.info['icc_profile'] = image.info['icc_profile']
+        return output
 
     def _tiles(self, rgb, tile, quality, progress, checkpoint):
         import torch

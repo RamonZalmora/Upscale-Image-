@@ -8,18 +8,22 @@
 <body>
 <header><div class="brand-icon">↗</div><div><p class="eyebrow">LOCAL ASSET STUDIO</p><h1>Etsy AI Image Upscaler</h1></div><div class="device" id="device">Device: detecting…</div></header>
 <main>
-<section class="intro"><div><h2>Detail lebih jelas. Produksi lebih mudah.</h2><p>Real-ESRGAN super-resolution untuk clipart, digital paper, dan printable Anda.</p></div><span class="badge">100% LOCAL PROCESSING</span></section>
+<section class="intro"><div><h2>Detail lebih jelas. Produksi lebih mudah.</h2><p>Pilihan AI detail atau AI ringan untuk clipart, digital paper, dan printable Anda.</p></div><span class="badge">100% LOCAL PROCESSING</span></section>
 <div class="workspace">
 <aside class="panel settings"><div class="section-title"><h2>Output settings</h2><span>01</span></div>
-<label>Preset<select id="preset"><option value="custom">Custom</option><option value="etsy">ETSY PRODUCTION</option><option value="max">MAX QUALITY</option></select></label>
-<label>Upscale<select id="scale"><option value="2">2× upscale</option><option value="3">3× upscale</option><option value="4">4× upscale</option></select></label>
+<label>Preset<select id="preset"><option value="custom">Custom</option><option value="laptop">RINGAN LAPTOP · file kecil</option><option value="etsy">ETSY PRODUCTION</option><option value="max">MAX QUALITY</option></select></label>
+<label>Model upscale<select id="model"><option value="detail">Real-ESRGAN · detail tinggi</option><option value="light">AI Ringan · detail rendah (FSRCNN)</option></select></label>
+<p id="model-hint" class="hint">Model detail untuk hasil lebih tajam.</p>
+<label>Upscale<select id="scale"><option value="2">2× upscale</option><option value="2.5">2.5× upscale</option><option value="3">3× upscale</option><option value="3.5">3.5× upscale</option><option value="4">4× upscale</option><option value="4.5">4.5× upscale</option></select></label>
 <label>Quality<select id="quality"><option value="superfast">Super Cepat · AI Turbo</option><option value="fast">Fast · 1 AI pass</option><option value="balanced">Balanced · 2 AI passes</option><option value="high" selected>High Quality · 4 AI passes</option></select></label>
-<p class="hint">Super Cepat: 1 AI pass, tile lebih besar, FP16 pada CUDA. Tile size: AUTO.</p>
+<p id="quality-hint" class="hint">Super Cepat: 1 AI pass, tile lebih besar, FP16 pada CUDA. Tile size: AUTO.</p>
 <div class="divider"></div>
 <label class="toggle"><input type="checkbox" id="dpi"><span>Set output to 300 DPI</span></label>
 <label class="toggle"><input type="checkbox" id="compress"><span>Smart compression</span></label>
 <div id="compression-options" hidden>
-<label>Compression<select id="compression"><option value="light">Light · quality floor 90</option><option value="balanced" selected>Balanced · quality floor 85</option><option value="maximum">Maximum · quality floor 80</option></select></label>
+<label class="toggle"><input type="checkbox" id="auto-size"><span>Ukuran otomatis · maks. 4 MB</span></label>
+<p class="hint">Target 2.5× ukuran asli, maksimal 4 MB. Contoh JPG 1.5 MB → target 3.75 MB; hasil bisa lebih kecil.</p>
+<label>Compression<select id="compression"><option value="light">Light</option><option value="balanced" selected>Balanced</option><option value="maximum">Maximum</option></select></label>
 <label>Target maximum size (MB)<input id="target" type="number" min="0.01" max="1000" step="0.1" placeholder="Optional, e.g. 2"></label>
 <p class="hint">PNG tetap lossless. Target ukuran tidak dijamin jika kualitas akan turun.</p>
 </div>

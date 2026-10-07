@@ -2,6 +2,24 @@ import re
 from pathlib import Path
 from PIL import Image, ImageOps
 
+SCALES = (2, 2.5, 3, 3.5, 4, 4.5)
+
+
+def output_dimensions(width, height, scale):
+    if isinstance(scale, bool) or scale not in SCALES:
+        raise ValueError('Invalid upscale scale')
+    # Round half pixels up, matching JavaScript Math.round.
+    return int(width * scale + .5), int(height * scale + .5)
+
+
+def check_dimensions(width, height, scale, model_name):
+    dimensions = output_dimensions(width, height, scale)
+    native = 2 if model_name == 'light' else 4
+    if max(width * height * native**2, dimensions[0] * dimensions[1]) > 100_000_000:
+        raise ValueError('AI or final output exceeds the safe 100 megapixel limit.')
+    return dimensions
+
+
 SUPPORTED = {'.jpg', '.jpeg', '.png', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
@@ -16,8 +34,8 @@ def inspect_image(path, thumbnail):
         width, height = image.size
         if image.getexif().get(274) in (5, 6, 7, 8):
             width, height = height, width
-        if width * height * 16 > 100_000_000:
-            raise ValueError('Native 4x output exceeds the safe 100 megapixel limit.')
+        if width * height > 25_000_000:
+            raise ValueError('Input exceeds the safe 25 megapixel limit.')
         alpha = image.mode in ('RGBA', 'LA') or 'transparency' in image.info
         # JPEG uses decoder-side reduction; PNG/WebP decoders still need a pixel decode.
         image.draft('RGB', (288, 288))

@@ -32,3 +32,13 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON A
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## FSRCNN TensorFlow model
+
+The optional lightweight `FSRCNN_x2.pb` pretrained neural model comes from
+[Saafke/FSRCNN_Tensorflow](https://github.com/Saafke/FSRCNN_Tensorflow).
+The project and published model are distributed under Apache License 2.0;
+see [the included license](licenses/FSRCNN-APACHE-2.0.txt).
+The model is downloaded unchanged, verified by SHA-256, and not committed here.
+Inference uses OpenCV's `dnn_superres` CPU backend. No FSRCNN training source
+is copied into this repository. Upstream author: Saafke (FSRCNN TensorFlow implementation).

@@ -10,23 +10,23 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 from .compressor import encode_image
-from .image_utils import inspect_image, reserve_output, safe_name
+from .image_utils import inspect_image, reserve_output, safe_name, SCALES, output_dimensions, check_dimensions
 from .upscaler import Upscaler, Cancelled
 
 TERMINAL = {'Completed', 'Failed', 'Cancelled'}
 DEFAULTS = dict(scale=2, quality='high', dpi=False, compress=False, compression='balanced',
-                target_mb=None, format='original', base_name='', output_dir='')
+                target_mb=None, format='original', base_name='', output_dir='', model='detail', auto_size=False)
 
 
 def validate_options(raw):
     options = {**DEFAULTS, **{key: value for key, value in raw.items() if key in DEFAULTS}}
-    if options['scale'] not in (2, 3, 4) or options['quality'] not in ('superfast', 'fast', 'balanced', 'high'):
+    if isinstance(options['scale'], bool) or options['scale'] not in SCALES or options['model'] not in ('detail', 'light') or options['quality'] not in ('superfast', 'fast', 'balanced', 'high'):
         raise ValueError('Invalid scale or quality')
     if options['format'] not in ('original', 'JPEG', 'PNG', 'WEBP'):
         raise ValueError('Invalid output format')
     if options['compression'] not in ('light', 'balanced', 'maximum'):
         raise ValueError('Invalid compression level')
-    if not isinstance(options['dpi'], bool) or not isinstance(options['compress'], bool):
+    if not all(isinstance(options[key], bool) for key in ('dpi', 'compress', 'auto_size')):
         raise ValueError('Invalid toggle value')
     if options['target_mb'] is not None:
         options['target_mb'] = float(options['target_mb'])
@@ -35,7 +35,19 @@ def validate_options(raw):
     for key in ('base_name', 'output_dir'):
         if not isinstance(options[key], str):
             raise ValueError('Invalid filename or folder')
+    if options['model'] == 'light':
+        options['quality'] = 'superfast'
     return options
+
+
+def effective_size_target(options, original_size):
+    if not options['compress']:
+        return None
+    if options['target_mb'] is not None:
+        return options['target_mb']
+    if options.get('auto_size'):
+        return min(4.0, max(0.1, original_size / 1024**2 * 2.5))
+    return None
 
 
 class QueueManager:
@@ -51,6 +63,10 @@ class QueueManager:
         self.lock = threading.RLock()
         self.jobs = {key: json.loads(data) for key, data in self.db.execute('SELECT id, data FROM jobs ORDER BY rowid')}
         for job in self.jobs.values():
+            merged_options = {**DEFAULTS, **job['options']}
+            if merged_options != job['options']:
+                job['options'] = merged_options
+                self._save(job)
             if job['status'] not in TERMINAL and job['status'] != 'Waiting':
                 job.update(status='Waiting', progress=0, error='Recovered after restart')
                 self._save(job)
@@ -95,8 +111,7 @@ class QueueManager:
                        progress=0, error='', warning='')
             try:
                 job['width'], job['height'], job['original_format'], job['alpha'] = inspect_image(source, thumb)
-                if job['width'] * job['height'] * 16 > 100_000_000:
-                    raise ValueError('Image exceeds the safe native 4x limit (100 megapixels output).')
+                check_dimensions(job['width'], job['height'], options['scale'], options['model'])
             except Exception as exc:
                 job.update(status='Failed', error=f'Unsupported or damaged image: {exc}')
             self.jobs[identifier] = job
@@ -109,8 +124,8 @@ class QueueManager:
             for job in self.jobs.values():
                 item = {k: v for k, v in job.items() if k not in ('source', 'thumbnail', 'output')}
                 item['output_name'] = Path(job['output']).name if job['output'] else ''
-                item['output_width'] = job['width'] * job['options']['scale']
-                item['output_height'] = job['height'] * job['options']['scale']
+                item['output_width'], item['output_height'] = output_dimensions(job['width'], job['height'], job['options']['scale'])
+                item['target_mb'] = effective_size_target(job['options'], job['original_size'])
                 jobs.append(item)
             return dict(jobs=jobs, running=self.running, paused=self.paused, active=self.active,
                         completed=sum(j['status'] == 'Completed' for j in jobs), total=len(jobs),
@@ -205,11 +220,12 @@ class QueueManager:
                     image = image.convert('RGBA')
                 self._update(job, status='Upscaling')
                 result = self.engine.upscale(image, opts['scale'], opts['quality'],
-                                             lambda p: self._update(job, progress=round(p)), checkpoint)
+                                             lambda p: self._update(job, progress=round(p)), checkpoint, model_name=opts['model'])
                 checkpoint()
                 self._update(job, status='Compressing' if opts['compress'] else 'Processing', progress=92)
                 fmt = job['original_format'] if opts['format'] == 'original' else opts['format']
-                data, warning = encode_image(result, fmt, opts['dpi'], opts['compress'], opts['compression'], opts['target_mb'], checkpoint)
+                data, warning = encode_image(result, fmt, opts['dpi'], opts['compress'], opts['compression'], effective_size_target(opts, job['original_size']), checkpoint,
+                                             profile='efficient' if opts['model'] == 'light' else 'standard')
                 result.close()
                 image.close()
                 checkpoint()

@@ -13,7 +13,7 @@ from werkzeug.datastructures import FileStorage
 
 from app import ROOT, create_app
 from core.compressor import encode_image
-from core.image_utils import reserve_output, inspect_image
+from core.image_utils import reserve_output, inspect_image, SCALES
 from core.queue_manager import QueueManager
 from core.upscaler import Upscaler, Cancelled
 
@@ -58,7 +58,7 @@ class RealInferenceTests(unittest.TestCase):
 
     def test_real_neural_inference_all_scales_and_modes(self):
         image = sample()
-        for scale in (2, 3, 4):
+        for scale in SCALES:
             for quality in ('superfast', 'fast', 'balanced', 'high'):
                 with self.subTest(scale=scale, quality=quality):
                     result = self.engine.upscale(image, scale, quality)
@@ -312,7 +312,7 @@ class ControlledEngine:
     def __init__(self):
         self.entered=threading.Event()
         self.release=threading.Event()
-    def upscale(self,image,scale,quality,progress,checkpoint):
+    def upscale(self,image,scale,quality,progress,checkpoint,model_name='detail'):
         self.entered.set()
         while not self.release.wait(.01):
             checkpoint()

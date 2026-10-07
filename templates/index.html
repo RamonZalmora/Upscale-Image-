@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-token" content="{{ token }}"><title>Etsy AI Image Upscaler</title>
+<link rel="stylesheet" href="/static/style.css"><script defer src="/static/app.js"></script>
+</head>
+<body>
+<header><div class="brand-icon">↗</div><div><p class="eyebrow">LOCAL ASSET STUDIO</p><h1>Etsy AI Image Upscaler</h1></div><div class="device" id="device">Device: detecting…</div></header>
+<main>
+<section class="intro"><div><h2>Detail lebih jelas. Produksi lebih mudah.</h2><p>Real-ESRGAN super-resolution untuk clipart, digital paper, dan printable Anda.</p></div><span class="badge">100% LOCAL PROCESSING</span></section>
+<div class="workspace">
+<aside class="panel settings"><div class="section-title"><h2>Output settings</h2><span>01</span></div>
+<label>Preset<select id="preset"><option value="custom">Custom</option><option value="etsy">ETSY PRODUCTION</option><option value="max">MAX QUALITY</option></select></label>
+<label>Upscale<select id="scale"><option value="2">2× upscale</option><option value="3">3× upscale</option><option value="4">4× upscale</option></select></label>
+<label>Quality<select id="quality"><option value="fast">Fast · 1 AI pass</option><option value="balanced">Balanced · 2 AI passes</option><option value="high" selected>High Quality · 4 AI passes</option></select></label>
+<p class="hint">Native 4× AI + self-ensemble. Tile size: AUTO.</p>
+<div class="divider"></div>
+<label class="toggle"><input type="checkbox" id="dpi"><span>Set output to 300 DPI</span></label>
+<label class="toggle"><input type="checkbox" id="compress"><span>Smart compression</span></label>
+<div id="compression-options" hidden>
+<label>Compression<select id="compression"><option value="light">Light · quality floor 90</option><option value="balanced" selected>Balanced · quality floor 85</option><option value="maximum">Maximum · quality floor 80</option></select></label>
+<label>Target maximum size (MB)<input id="target" type="number" min="0.01" max="1000" step="0.1" placeholder="Optional, e.g. 2"></label>
+<p class="hint">PNG tetap lossless. Target ukuran tidak dijamin jika kualitas akan turun.</p>
+</div>
+<div class="divider"></div>
+<label>Output format<select id="format"><option value="original">Keep Original Format</option><option value="JPEG">JPG</option><option value="PNG">PNG</option><option value="WEBP">WEBP</option></select></label>
+<label>Filename<select id="naming"><option value="original">Keep Original Filename</option><option value="custom">Custom Base Name</option></select></label>
+<label id="base-label" hidden>Custom base name<input id="base" placeholder="moonlit-library" maxlength="100"></label>
+<label>Output folder<input id="output-dir" placeholder="Default: project/output" title="Absolute or project-relative path, e.g. D:\Etsy Assets"></label>
+<p class="hint">Hasil masuk subfolder completed/. PNG transparan tetap transparan; JPG transparan ditolak.</p>
+<button class="secondary full" id="apply-settings">Apply to selected waiting</button>
+<p class="hint">Settings disimpan saat gambar ditambahkan. Pilih antrean Waiting untuk mengubahnya.</p>
+</aside>
+<div class="content">
+<section id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Add or drop images">
+<div class="upload-icon">↥</div><h2>Drop your images here</h2><p>JPG, JPEG, PNG, WEBP · Tambahkan file kapan saja</p>
+<div class="button-row"><button class="primary" id="add-images">＋ Add Images</button><button class="secondary" id="add-folder">Add Folder</button></div>
+<input id="files" type="file" accept=".jpg,.jpeg,.png,.webp" multiple hidden><input id="folder" type="file" webkitdirectory multiple hidden>
+<div id="upload-progress" class="hint" aria-live="polite"></div>
+</section>
+<section class="panel queue-panel"><div class="queue-heading"><div class="section-title"><h2>Production queue</h2><span id="queue-count">0 assets</span></div><button class="secondary" id="zip">↓ Download All ZIP</button></div>
+<div class="toolbar"><button class="primary" data-control="start">▶ Start Processing</button><button class="secondary" id="pause" data-control="pause">Pause</button><button class="secondary" data-control="cancel_current">Cancel Current</button><button class="secondary" data-control="retry_failed">Retry Failed</button></div>
+<div class="toolbar small"><button data-control="cancel">Cancel Selected</button><button data-control="remove">Remove Selected</button><button data-control="clear_completed">Clear Completed</button><button data-control="clear" class="danger">Clear Queue</button></div>
+<div class="table-scroll"><table><thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all images"></th><th>Preview</th><th>Filename</th><th>Resolution</th><th>Scale</th><th>Status / Progress</th><th>Size</th><th>Action</th></tr></thead><tbody id="queue"></tbody></table><div id="empty" class="empty"><div>◇</div><h3>Your next collection starts here</h3><p>Tambahkan gambar, pilih settings, lalu Start Processing.</p></div></div>
+<footer class="queue-footer"><div><strong id="overall-count">0 / 0 Completed</strong><span id="run-status">Ready</span></div><progress id="overall" max="100" value="0"></progress></footer>
+</section><div id="zip-progress" class="hint" aria-live="polite"></div>
+<p class="note">File asli tidak ditimpa. Antrean dan hasil disimpan saat aplikasi ditutup. AI dapat mengubah detail kecil—periksa hasil sebelum dijual.</p>
+</div></div>
+</main><div id="toast" role="status" hidden></div>
+</body></html>

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+models/*.pth
+models/*.part
+output/
+temp/
+logs/
+*.sqlite3*

@@ -62,6 +62,15 @@ Name menggunakan nomor urut persisten seperti `moonlit-library-001.png`.
   SRVGGNetCompact resmi, bukan resize-only atau generasi ulang gambar.
 - Model native **4×**. Untuk **2× / 3×**, hasil neural 4× diturunkan dengan Lanczos
   ke dimensi tepat. Lanczos bukan pengganti inference AI.
+- **Super Cepat (AI Turbo)**: 1 inference AI tanpa self-ensemble, tile CPU/MPS
+  256 pixel dan tile CUDA sampai 768 pixel untuk mengurangi pemrosesan overlap
+  berulang. CUDA memakai FP16 otomatis; CPU/MPS tetap FP32. Tile tetap memakai
+  padding 40 pixel dan akan diperkecil jika memori tidak cukup. Kecepatan aktual
+  tergantung perangkat dan gambar, bukan jaminan waktu tertentu. FP16 pada CUDA
+  dapat sedikit mengubah hasil numerik. Transparansi, DPI, dan format tetap didukung.
+  Pilih **Quality → Super Cepat**, atau terapkan ke file Waiting dengan
+  **Apply to selected waiting**. Untuk throughput maksimal, matikan compression
+  bila tidak diperlukan; kompresi tetap menambah waktu ekspor.
 - **Fast**: 1 inference. **Balanced**: rata-rata 2 inference (horizontal flip).
   **High Quality**: rata-rata 4 inference (horizontal/vertical flip self-ensemble).
   Ini mengurangi ketidakstabilan orientasi; kecepatan tergantung ukuran/device.

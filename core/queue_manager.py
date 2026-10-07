@@ -20,7 +20,7 @@ DEFAULTS = dict(scale=2, quality='high', dpi=False, compress=False, compression=
 
 def validate_options(raw):
     options = {**DEFAULTS, **{key: value for key, value in raw.items() if key in DEFAULTS}}
-    if options['scale'] not in (2, 3, 4) or options['quality'] not in ('fast', 'balanced', 'high'):
+    if options['scale'] not in (2, 3, 4) or options['quality'] not in ('superfast', 'fast', 'balanced', 'high'):
         raise ValueError('Invalid scale or quality')
     if options['format'] not in ('original', 'JPEG', 'PNG', 'WEBP'):
         raise ValueError('Invalid output format')

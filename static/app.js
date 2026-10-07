@@ -105,7 +105,7 @@ function renderRow(job) {
   const previewCell=el('td');if(job.width){const image=el('img');image.src=`/api/thumbnail/${job.id}`;image.alt=job.filename;image.className='preview';image.loading='lazy';previewCell.append(image);}tr.append(previewCell);
   const name=el('td',job.filename,'filename');if(job.output_name)name.append(el('span',job.output_name,'sub'));tr.append(name);
   const resolution=el('td',`${job.width} × ${job.height}`);resolution.append(el('span',`→ ${job.output_width} × ${job.output_height}`,'sub'));tr.append(resolution);
-  const scale=el('td',`${job.options.scale}×`);scale.append(el('span',job.options.quality,'sub'));tr.append(scale);
+  const scale=el('td',`${job.options.scale}×`);scale.append(el('span',job.options.quality === 'superfast' ? 'Super Cepat' : job.options.quality,'sub'));tr.append(scale);
   const status=el('td');status.append(el('span',`${job.status} · ${job.progress}%`,`status ${job.status}`));const bar=el('progress');bar.max=100;bar.value=job.progress;bar.setAttribute('aria-label',`${job.filename} progress`);status.append(bar);
   if(job.error || job.warning)status.append(el('div',job.error || job.warning,'message'));tr.append(status);
   const bytes=el('td',size(job.original_size));bytes.append(el('span',job.output_size?`→ ${size(job.output_size)}`:'→ —','sub'));tr.append(bytes);

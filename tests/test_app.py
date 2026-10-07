@@ -56,7 +56,7 @@ class RealInferenceTests(unittest.TestCase):
     def test_real_neural_inference_all_scales_and_modes(self):
         image = sample()
         for scale in (2, 3, 4):
-            for quality in ('fast', 'balanced', 'high'):
+            for quality in ('superfast', 'fast', 'balanced', 'high'):
                 with self.subTest(scale=scale, quality=quality):
                     result = self.engine.upscale(image, scale, quality)
                     self.assertEqual(result.size, (24 * scale, 20 * scale))
@@ -79,6 +79,36 @@ class RealInferenceTests(unittest.TestCase):
             tiled = self.engine._tiles(pixels, 32, quality, lambda p: None, lambda: None)
             delta = np.abs(full.astype(int)-tiled.astype(int))
             self.assertLessEqual(delta.max(), 1, f'Tile boundary error: {delta.max()}')
+
+    def test_superfast_reduces_tile_work_without_losing_detail(self):
+        image = sample(size=(160, 160))
+        counts = []
+        outputs = []
+        for quality in ('fast', 'superfast'):
+            calls = []
+            hook = self.engine.model.register_forward_hook(lambda *args: calls.append(1))
+            try:
+                outputs.append(self.engine.upscale(image, 2, quality))
+                counts.append(len(calls))
+            finally:
+                hook.remove()
+        self.assertEqual(counts, [4, 1])
+        delta = np.abs(np.asarray(outputs[0]).astype(int) - np.asarray(outputs[1]).astype(int))
+        self.assertLessEqual(delta.max(), 1)
+
+    def test_superfast_retries_smaller_tiles_on_oom(self):
+        import torch
+        original = self.engine._tiles
+        calls = []
+        def simulate_oom(rgb, tile, quality, progress, checkpoint):
+            calls.append(tile)
+            if len(calls) == 1:
+                raise torch.OutOfMemoryError('Test allocation failure')
+            return original(rgb, tile, quality, progress, checkpoint)
+        with patch.object(self.engine, '_tiles', side_effect=simulate_oom):
+            result = self.engine.upscale(sample(), 3, 'superfast')
+        self.assertEqual(calls, [256, 128])
+        self.assertEqual(result.size, (72, 60))
 
     def test_cancel_checkpoint(self):
         def cancel():
@@ -201,7 +231,7 @@ class ApiWorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.get('/').status_code, 200)
         png = self.add(sample('RGBA'), 'clipart.png', {'scale':2, 'dpi':True, 'compress':True, 'quality':'high'})
         jpg = self.add(sample(), 'printable.jpg', {'scale':3, 'dpi':True, 'quality':'balanced', 'base_name':'collection'})
-        webp = self.add(sample('RGBA'), 'element.png', {'scale':4, 'format':'WEBP', 'dpi':True, 'quality':'fast'})
+        webp = self.add(sample('RGBA'), 'element.png', {'scale':4, 'format':'WEBP', 'dpi':True, 'quality':'superfast'})
         invalid = self.manager.add(upload(name='corrupt.png', raw=b'not an image'), {})
         rejected = self.add(sample('RGBA'), 'transparent.png', {'format':'JPEG'})
         after_error = self.add(sample(), 'after-error.png', {'quality':'fast'})

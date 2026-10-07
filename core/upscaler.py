@@ -108,16 +108,19 @@ class Upscaler:
         self.model.load_state_dict(weights.get('params_ema', weights.get('params', weights)), strict=True)
         self.model.eval().to(self.device)
 
-    def tile_size(self):
+    def tile_size(self, quality='high'):
         if self.device == 'cuda':
             import torch
             free, _ = torch.cuda.mem_get_info()
-            return 384 if free > 6 * 1024**3 else 256 if free > 3 * 1024**3 else 128
+            standard = 384 if free > 6 * 1024**3 else 256 if free > 3 * 1024**3 else 128
+            return min(768, standard * 2) if quality == 'superfast' else standard
+        if quality == 'superfast':
+            return 256
         return 128 if self.device == 'cpu' else 192
 
     def upscale(self, image, scale=2, quality='high', progress=lambda p: None, checkpoint=lambda: None):
         import torch
-        if scale not in (2, 3, 4) or quality not in ('fast', 'balanced', 'high'):
+        if scale not in (2, 3, 4) or quality not in ('superfast', 'fast', 'balanced', 'high'):
             raise ValueError('Invalid upscale settings')
         with self.lock:
             self.load(lambda p: progress(p * .05), checkpoint)
@@ -125,7 +128,7 @@ class Upscaler:
             if width * height * 16 > 100_000_000:
                 raise ValueError('Native 4x output exceeds 100 megapixels; split this image first.')
             rgb = np.asarray(image.convert('RGB'), dtype=np.float32) / 255
-            tile = self.tile_size()
+            tile = self.tile_size(quality)
             while True:
                 try:
                     result = self._tiles(rgb, tile, quality, progress, checkpoint)
@@ -162,7 +165,7 @@ class Upscaler:
         result = np.empty((height * 4, width * 4, 3), dtype=np.uint8)
         count = ((height + tile - 1) // tile) * ((width + tile - 1) // tile)
         passes = [(False, False)]
-        if quality != 'fast':
+        if quality in ('balanced', 'high'):
             passes.append((True, False))
         if quality == 'high':
             passes += [(False, True), (True, True)]
@@ -181,7 +184,10 @@ class Upscaler:
                     for horizontal, vertical in passes:
                         checkpoint()
                         dims = ([3] if horizontal else []) + ([2] if vertical else [])
-                        prediction = self.model(torch.flip(tensor, dims) if dims else tensor)
+                        # FP16 speeds up supported CUDA devices; CPU/MPS keep FP32.
+                        with torch.autocast(device_type='cuda', dtype=torch.float16,
+                                            enabled=quality == 'superfast' and self.device == 'cuda'):
+                            prediction = self.model(torch.flip(tensor, dims) if dims else tensor)
                         if dims:
                             prediction = torch.flip(prediction, dims)
                         prediction = prediction[:, :, (y-py)*4:(y1-py)*4, (x-px)*4:(x1-px)*4]

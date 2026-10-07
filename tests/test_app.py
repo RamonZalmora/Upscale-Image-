@@ -52,6 +52,9 @@ class RealInferenceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.engine = Upscaler(ROOT / 'models')
         cls.engine.load()
+        # Keep numerical and tile-count comparisons deterministic on GPU-equipped hosts.
+        cls.engine.device = 'cpu'
+        cls.engine.model.to('cpu')
 
     def test_real_neural_inference_all_scales_and_modes(self):
         image = sample()

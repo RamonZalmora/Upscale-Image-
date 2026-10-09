@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from PIL import Image, ImageOps
 
-SCALES = (2, 2.5, 3, 3.5, 4, 4.5)
+SCALES = (1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5)
 
 
 def output_dimensions(width, height, scale):

@@ -21,26 +21,33 @@ async function api(path, body, isForm=false) {
   return data;
 }
 function options() {
-  const compress = $('compress').checked;
+  const compress = $('compress').checked || $('operation').value === 'compress';
   return {scale:Number($('scale').value), quality:$('quality').value, dpi:$('dpi').checked, compress,
     compression:$('compression').value, target_mb:compress && !$('auto-size').checked && $('target').value ? Number($('target').value) : null,
-    format:$('format').value, model:$('model').value, auto_size:compress && $('auto-size').checked, base_name:$('naming').value === 'custom' ? $('base').value.trim() : '', output_dir:$('output-dir').value.trim()};
+    operation:$('operation').value, small_files:$('small-files').checked, print_paper:$('print-paper').value, format:$('format').value, model:$('model').value, auto_size:compress && $('auto-size').checked, base_name:$('naming').value === 'custom' ? $('base').value.trim() : '', output_dir:$('output-dir').value.trim()};
 }
 function updateSettings() {
+  const onlyCompress = $('operation').value === 'compress';
+  if(onlyCompress) $('compress').checked = true;
+  $('compress').disabled = onlyCompress;
+  $('model').disabled = onlyCompress;
+  $('scale').disabled = onlyCompress;
   $('compression-options').hidden = !$('compress').checked;
   $('base-label').hidden = $('naming').value !== 'custom';
   const light = $('model').value === 'light';
-  $('quality').disabled = light;
+  $('quality').disabled = light || onlyCompress;
   if(light) $('quality').value = 'superfast';
   $('target').disabled = $('auto-size').checked;
   $('quality-hint').textContent = light ? 'Mode ringan selalu memakai satu proses AI tanpa penguatan detail tambahan.' : 'Super Cepat: 1 AI pass, tile lebih besar, FP16 pada CUDA. Tile size: AUTO.';
-  $('model-hint').textContent = light ? 'AI ringan, detail lembut, maksimal 2 thread CPU. Hasil AI native 2× disesuaikan ke skala pilihan Anda.' : 'Real-ESRGAN native 4× untuk detail lebih tinggi. 4.5× disesuaikan dari hasil AI 4×.';
+  $('model-hint').textContent = light ? 'AI ringan, detail lembut, maksimal 2 thread CPU. Hasil AI native 2× disesuaikan ke skala pilihan Anda.' : 'Real-ESRGAN native 4× untuk detail lebih tinggi. Skala di atas 4× disesuaikan dari hasil AI 4×.';
   try {localStorage.setItem('upscaler-settings', JSON.stringify(options()));} catch (_) {}
 }
 function fillSettings(o) {
-  for(const id of ['scale','quality','format','compression','model']) if(o[id] !== undefined) $(id).value = o[id];
+  for(const id of ['scale','quality','format','compression','model','operation']) if(o[id] !== undefined) $(id).value = o[id];
   for(const id of ['dpi','compress']) if(o[id] !== undefined) $(id).checked = Boolean(o[id]);
   $('auto-size').checked = Boolean(o.auto_size);
+  $('small-files').checked = Boolean(o.small_files);
+  $('print-paper').value = o.print_paper || 'none';
   $('target').value = o.target_mb || '';
   $('base').value = o.base_name || ''; $('naming').value = o.base_name ? 'custom':'original';
   $('output-dir').value = o.output_dir || ''; updateSettings();
@@ -49,13 +56,16 @@ try {const stored=JSON.parse(localStorage.getItem('upscaler-settings')); if(stor
 for(const input of document.querySelectorAll('.settings input,.settings select')) input.addEventListener('change', updateSettings);
 $('preset').addEventListener('change', () => {
   const preset = $('preset').value;
-  if(preset === 'etsy') fillSettings({scale:2, quality:'high', dpi:true, compress:true, compression:'balanced', target_mb:2, format:'original',model:'detail',auto_size:false});
-  if(preset === 'laptop') fillSettings({scale:3.5,quality:'superfast',model:'light',dpi:false,compress:true,compression:'balanced',target_mb:null,auto_size:true,format:'original'});
-  if(preset === 'max') fillSettings({scale:4, quality:'high', dpi:false, compress:false, compression:'balanced', target_mb:null, format:'original',model:'detail',auto_size:false});
+  if(preset === 'compact') fillSettings({...options(),operation:'compress',compress:true,small_files:true,compression:'maximum',auto_size:false,target_mb:2,print_paper:'none'});
+  if(preset === 'print-a4' || preset === 'print-letter') fillSettings({...options(),operation:'upscale',model:'detail',scale:2,quality:'balanced',dpi:true,compress:true,small_files:false,compression:'light',auto_size:false,target_mb:null,print_paper:preset === 'print-a4'?'a4':'letter'});
+  if(preset === 'etsy') fillSettings({scale:2, quality:'high', dpi:true, compress:true, compression:'balanced', target_mb:2, format:'original',model:'detail',auto_size:false,operation:'upscale',small_files:false,print_paper:'none'});
+  if(preset === 'laptop') fillSettings({scale:3.5,quality:'superfast',model:'light',dpi:false,compress:true,compression:'balanced',target_mb:null,auto_size:true,format:'original',operation:'upscale',small_files:true,print_paper:'none'});
+  if(preset === 'max') fillSettings({scale:4, quality:'high', dpi:false, compress:false, compression:'balanced', target_mb:null, format:'original',model:'detail',auto_size:false,operation:'upscale',small_files:false,print_paper:'none'});
 });
 $('model').addEventListener('change', () => {if($('model').value === 'light') fillSettings({...options(),quality:'superfast',compress:true,auto_size:true,target_mb:null});});
 updateSettings();
 $('apply-settings').onclick = () => runControl('apply');
+$('recommend-print').onclick = () => runControl('recommend_print');
 $('add-images').onclick = event => {event.stopPropagation();$('files').click();};
 $('add-folder').onclick = event => {event.stopPropagation();$('folder').click();};
 for(const id of ['files','folder']) $(id).onchange = event => {enqueueUploads(Array.from(event.target.files));event.target.value='';};
@@ -94,9 +104,9 @@ function enqueueUploads(files) {
   }).catch(error=>notice(error.message));
 }
 async function runControl(action) {
-  if(['cancel','remove','apply'].includes(action) && !selected.size){notice('Pilih gambar di antrean terlebih dahulu.');return;}
+  if(['cancel','remove','apply','recommend_print'].includes(action) && !selected.size){notice('Pilih gambar di antrean terlebih dahulu.');return;}
   if(action === 'clear' && !confirm('Clear queue? Completed output files will be kept.'))return;
-  try {await api('/api/control',{action,ids:[...selected],options:action === 'apply'?options():undefined});await refresh();}
+  try {await api('/api/control',{action,ids:[...selected],options:['apply','recommend_print'].includes(action)?options():undefined});await refresh();}
   catch(error){notice(error.message);}
 }
 for(const button of document.querySelectorAll('[data-control]')) button.onclick=()=>runControl(button.dataset.control);
@@ -114,8 +124,8 @@ function renderRow(job) {
   check.onchange=()=>{check.checked?selected.add(job.id):selected.delete(job.id);syncSelection();};checkCell.append(check);tr.append(checkCell);
   const previewCell=el('td');if(job.width){const image=el('img');image.src=`/api/thumbnail/${job.id}`;image.alt=job.filename;image.className='preview';image.loading='lazy';previewCell.append(image);}tr.append(previewCell);
   const name=el('td',job.filename,'filename');if(job.output_name)name.append(el('span',job.output_name,'sub'));tr.append(name);
-  const resolution=el('td',`${job.width} × ${job.height}`);resolution.append(el('span',`→ ${job.output_width} × ${job.output_height}`,'sub'));tr.append(resolution);
-  const scale=el('td',`${job.options.scale}×`);scale.append(el('span',job.options.model === 'light' ? 'AI Ringan' : job.options.quality === 'superfast' ? 'Super Cepat' : job.options.quality,'sub'));tr.append(scale);
+  const resolution=el('td',`${job.width} × ${job.height}`);resolution.append(el('span',`→ ${job.output_width} × ${job.output_height}`,'sub'));if(job.print){resolution.append(el('span',`${job.print.paper} · ${job.print.effective_ppi} PPI · ${job.print.sufficient?'target tercapai':'belum cukup'}`,'sub'));if(job.print.aspect_mismatch)resolution.append(el('span','Rasio berbeda: gunakan margin, jangan stretch.','message'));}tr.append(resolution);
+  const scale=el('td',job.options.operation === 'compress'?'Tanpa upscale':`${job.options.scale}×`);scale.append(el('span',job.options.model === 'light' ? 'AI Ringan' : job.options.quality === 'superfast' ? 'Super Cepat' : job.options.quality,'sub'));tr.append(scale);
   const status=el('td');status.append(el('span',`${job.status} · ${job.progress}%`,`status ${job.status}`));const bar=el('progress');bar.max=100;bar.value=job.progress;bar.setAttribute('aria-label',`${job.filename} progress`);status.append(bar);
   if(job.error || job.warning)status.append(el('div',job.error || job.warning,'message'));tr.append(status);
   const bytes=el('td',size(job.original_size));if(job.target_mb)bytes.append(el('span',`Target ≤ ${job.target_mb.toFixed(2)} MB`,'sub'));bytes.append(el('span',job.output_size?`→ ${size(job.output_size)}`:'→ —','sub'));tr.append(bytes);
@@ -143,6 +153,8 @@ async function refresh() {
   for(const [id,row] of rows){if(!live.has(id)){row.element.remove();rows.delete(id);selected.delete(id);}}
   for(const job of state.jobs){const signature=JSON.stringify(job);const current=rows.get(job.id);
     if(!current || current.signature !== signature){const element=renderRow(job);if(current)current.element.replaceWith(element);else $('queue').append(element);rows.set(job.id,{element,signature});}}
+  const paper=$('print-paper').value;
+  $('print-advice').textContent=paper==='a4'?'A4: 2480 × 3508 px pada 300 PPI. Pilih file Waiting lalu klik rekomendasi.':paper==='letter'?'US Letter: 2550 × 3300 px pada 300 PPI. Pilih file Waiting lalu klik rekomendasi.':'';
   syncSelection();$('empty').hidden=state.total>0;$('queue-count').textContent=`${state.total} assets`;
   $('overall-count').textContent=`${state.completed} / ${state.total} Completed`;
   $('overall').value=state.total?state.jobs.reduce((sum,j)=>sum+(['Failed','Cancelled','Completed'].includes(j.status)?100:j.progress),0)/state.total:0;

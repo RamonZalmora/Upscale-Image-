@@ -39,7 +39,7 @@ def encode_image(image, fmt, dpi=False, compress=False, level='balanced', target
         return buf.getvalue()
 
     if efficient and fmt != 'PNG':
-        ceiling = 90
+        ceiling = {'light': 92, 'balanced': 86, 'maximum': 80}[level]
         data = encode(ceiling)
         if target and len(data) > target:
             # At most 7 further encodes; find the highest quality meeting the cap.

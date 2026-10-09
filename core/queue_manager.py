@@ -12,21 +12,24 @@ from PIL import Image, ImageOps
 from .compressor import encode_image
 from .image_utils import inspect_image, reserve_output, safe_name, SCALES, output_dimensions, check_dimensions
 from .upscaler import Upscaler, Cancelled
+from .print_utils import print_guidance
 
 TERMINAL = {'Completed', 'Failed', 'Cancelled'}
 DEFAULTS = dict(scale=2, quality='high', dpi=False, compress=False, compression='balanced',
-                target_mb=None, format='original', base_name='', output_dir='', model='detail', auto_size=False)
+                target_mb=None, format='original', base_name='', output_dir='', model='detail', auto_size=False, operation='upscale', small_files=False, print_paper='none')
 
 
 def validate_options(raw):
     options = {**DEFAULTS, **{key: value for key, value in raw.items() if key in DEFAULTS}}
     if isinstance(options['scale'], bool) or options['scale'] not in SCALES or options['model'] not in ('detail', 'light') or options['quality'] not in ('superfast', 'fast', 'balanced', 'high'):
         raise ValueError('Invalid scale or quality')
+    if options['operation'] not in ('upscale', 'compress') or options['print_paper'] not in ('none', 'a4', 'letter'):
+        raise ValueError('Invalid operation or paper')
     if options['format'] not in ('original', 'JPEG', 'PNG', 'WEBP'):
         raise ValueError('Invalid output format')
     if options['compression'] not in ('light', 'balanced', 'maximum'):
         raise ValueError('Invalid compression level')
-    if not all(isinstance(options[key], bool) for key in ('dpi', 'compress', 'auto_size')):
+    if not all(isinstance(options[key], bool) for key in ('dpi', 'compress', 'auto_size', 'small_files')):
         raise ValueError('Invalid toggle value')
     if options['target_mb'] is not None:
         options['target_mb'] = float(options['target_mb'])
@@ -35,6 +38,8 @@ def validate_options(raw):
     for key in ('base_name', 'output_dir'):
         if not isinstance(options[key], str):
             raise ValueError('Invalid filename or folder')
+    if options['operation'] == 'compress':
+        options['compress'] = True
     if options['model'] == 'light':
         options['quality'] = 'superfast'
     return options
@@ -111,7 +116,8 @@ class QueueManager:
                        progress=0, error='', warning='')
             try:
                 job['width'], job['height'], job['original_format'], job['alpha'] = inspect_image(source, thumb)
-                check_dimensions(job['width'], job['height'], options['scale'], options['model'])
+                # Check native/final allocation limits when processing, so an already
+                # print-ready source can first receive a no-upscale recommendation.
             except Exception as exc:
                 job.update(status='Failed', error=f'Unsupported or damaged image: {exc}')
             self.jobs[identifier] = job
@@ -124,7 +130,9 @@ class QueueManager:
             for job in self.jobs.values():
                 item = {k: v for k, v in job.items() if k not in ('source', 'thumbnail', 'output')}
                 item['output_name'] = Path(job['output']).name if job['output'] else ''
-                item['output_width'], item['output_height'] = output_dimensions(job['width'], job['height'], job['options']['scale'])
+                scale = job['options']['scale'] if job['options']['operation'] == 'upscale' else 1
+                item['output_width'], item['output_height'] = (job['width'], job['height']) if scale == 1 else output_dimensions(job['width'], job['height'], scale)
+                item['print'] = print_guidance(job['width'], job['height'], job['options']['print_paper'], scale)
                 item['target_mb'] = effective_size_target(job['options'], job['original_size'])
                 jobs.append(item)
             return dict(jobs=jobs, running=self.running, paused=self.paused, active=self.active,
@@ -139,7 +147,7 @@ class QueueManager:
                 self.paused = True
             elif action == 'resume':
                 self.running, self.paused = True, False
-            elif action in ('cancel', 'cancel_current', 'remove', 'clear', 'clear_completed', 'retry', 'retry_failed', 'apply'):
+            elif action in ('cancel', 'cancel_current', 'remove', 'clear', 'clear_completed', 'retry', 'retry_failed', 'apply', 'recommend_print'):
                 if action == 'cancel_current':
                     selected = [self.active] if self.active else []
                 elif action == 'clear':
@@ -150,7 +158,20 @@ class QueueManager:
                     selected = [k for k, j in self.jobs.items() if j['status'] == 'Failed']
                 else:
                     selected = ids or []
-                new_options = validate_options(options or {}) if action == 'apply' else None
+                new_options = validate_options(options or {}) if action in ('apply', 'recommend_print') else None
+                recommendations = {}
+                if action == 'recommend_print':
+                    for key in selected:
+                        candidate = self.jobs.get(key)
+                        if not candidate or candidate['status'] != 'Waiting':
+                            continue
+                        guidance = print_guidance(candidate['width'], candidate['height'], new_options['print_paper'])
+                        if not guidance or guidance['recommended_scale'] is None:
+                            raise ValueError('Pilih A4/US Letter; resolusi sumber ini belum cukup mencapai target pada skala maksimal 5.5x.')
+                        factor = guidance['recommended_scale']
+                        recommendations[key] = {**new_options, 'dpi': True, 'operation': 'compress' if factor == 1 else 'upscale', 'scale': 2 if factor == 1 else factor}
+                        if factor != 1:
+                            check_dimensions(candidate['width'], candidate['height'], factor, new_options['model'])
                 for key in selected:
                     job = self.jobs.get(key)
                     if not job:
@@ -169,6 +190,8 @@ class QueueManager:
                     elif action in ('retry', 'retry_failed') and job['status'] in ('Failed', 'Cancelled') and key != self.active:
                         self.cancelled.discard(key)
                         self._update(job, status='Waiting', progress=0, error='', warning='')
+                    elif action == 'recommend_print' and key in recommendations:
+                        self._update(job, options=validate_options(recommendations[key]))
                     elif action == 'apply' and job['status'] == 'Waiting':
                         self._update(job, options=new_options)
             else:
@@ -218,14 +241,23 @@ class QueueManager:
                     image = ImageOps.exif_transpose(original).copy()
                 if job['alpha']:
                     image = image.convert('RGBA')
-                self._update(job, status='Upscaling')
-                result = self.engine.upscale(image, opts['scale'], opts['quality'],
-                                             lambda p: self._update(job, progress=round(p)), checkpoint, model_name=opts['model'])
+                if opts['operation'] == 'compress':
+                    result = image.copy()
+                else:
+                    self._update(job, status='Upscaling')
+                    result = self.engine.upscale(image, opts['scale'], opts['quality'],
+                                                 lambda p: self._update(job, progress=round(p)), checkpoint, model_name=opts['model'])
                 checkpoint()
                 self._update(job, status='Compressing' if opts['compress'] else 'Processing', progress=92)
                 fmt = job['original_format'] if opts['format'] == 'original' else opts['format']
                 data, warning = encode_image(result, fmt, opts['dpi'], opts['compress'], opts['compression'], effective_size_target(opts, job['original_size']), checkpoint,
-                                             profile='efficient' if opts['model'] == 'light' else 'standard')
+                                             profile='efficient' if opts['model'] == 'light' or opts['small_files'] else 'standard')
+                if opts['operation'] == 'compress' and fmt == job['original_format'] and not opts['dpi'] and len(data) >= job['original_size']:
+                    data = Path(job['source']).read_bytes()
+                    target = effective_size_target(opts, job['original_size'])
+                    warning = 'File sumber sudah lebih kecil; dipertahankan tanpa kompresi tambahan.'
+                    if target and len(data) > target * 1024**2:
+                        warning += ' Target ukuran belum tercapai.'
                 result.close()
                 image.close()
                 checkpoint()

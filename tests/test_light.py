@@ -22,7 +22,7 @@ class LightInferenceTests(unittest.TestCase):
 
     def test_real_light_neural_model_all_scales_odd_dimensions(self):
         image = sample(size=(31, 27))
-        expected_sizes = [(62,54), (78,68), (93,81), (109,95), (124,108), (140,122)]
+        expected_sizes = [(47,41), (62,54), (78,68), (93,81), (109,95), (124,108), (140,122), (155,135), (171,149)]
         for scale, dimensions in zip(SCALES, expected_sizes):
             with self.subTest(scale=scale):
                 result = self.engine.upscale(image, scale, model_name='light')

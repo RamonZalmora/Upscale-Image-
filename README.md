@@ -62,7 +62,7 @@ Pilih preset **RINGAN LAPTOP** untuk workflow hemat proses:
 
 - **AI Ringan · detail rendah (FSRCNN)**, CPU maksimal **2 thread**, tanpa self-ensemble.
 - Default **3.5×**, compression Balanced, Keep Original Format, ukuran otomatis aktif.
-- Skala tersedia: **2×, 2.5×, 3×, 3.5×, 4×, 4.5×**. Ukuran piksel tidak dikurangi
+- Skala tersedia: **1.5×, 2×, 2.5×, 3×, 3.5×, 4×, 4.5×, 5×, 5.5×**. Ukuran piksel tidak dikurangi
   untuk mengejar target file; pecahan setengah piksel dibulatkan ke atas.
 - FSRCNN adalah model neural super-resolution kecil yang berbeda dari Real-ESRGAN.
   AI native **2×**, kemudian Lanczos menyesuaikan ke skala pilihan. Hasil lebih lembut
@@ -72,7 +72,7 @@ Pilih preset **RINGAN LAPTOP** untuk workflow hemat proses:
   Contoh JPG 1.5 MB → target 3.75 MB. Hasil boleh lebih kecil, tidak ditambah padding.
   Matikan Ukuran Otomatis untuk memasukkan target manual. Target manual berlaku jika
   disuplai bersama auto_size melalui API; compression OFF menonaktifkan semua target.
-- JPG mode ringan memakai chroma **4:2:0**, quality awal 90, pencarian biner bertarget,
+- JPG mode ringan memakai chroma **4:2:0**, quality awal 92/86/80 untuk Light/Balanced/Maximum, pencarian biner bertarget,
   floor **85 / 72 / 65** untuk Light / Balanced / Maximum. Detail warna halus dapat
   berkurang; pilih model detail bila lebih mengutamakan ketajaman. WEBP memakai
   encoder method 2. PNG tetap lossless (compression level 4), tidak otomatis ke JPG.
@@ -95,7 +95,7 @@ output produksi Anda. Queue lama tanpa pilihan model dibaca sebagai Real-ESRGAN.
 - Inti pipeline adalah neural inference **Real-ESRGAN realesr-general-x4v3**,
   SRVGGNetCompact resmi, bukan resize-only atau generasi ulang gambar.
 - Model Real-ESRGAN native **4×**. Untuk **2× / 2.5× / 3× / 3.5×**, hasil neural 4×
-  diturunkan dengan Lanczos ke dimensi tepat; **4.5×** diperbesar dari hasil AI 4×. Lanczos bukan pengganti inference AI.
+  diturunkan dengan Lanczos ke dimensi tepat; **4.5×/5×/5.5×** diperbesar dari hasil AI 4×. Lanczos bukan pengganti inference AI.
 - **Super Cepat (AI Turbo)**: 1 inference AI tanpa self-ensemble, tile CPU/MPS
   256 pixel dan tile CUDA sampai 768 pixel untuk mengurangi pemrosesan overlap
   berulang. CUDA memakai FP16 otomatis; CPU/MPS tetap FP32. Tile tetap memakai
@@ -183,10 +183,43 @@ pasang Microsoft Visual C++ Redistributable 2015–2022 (x64). Jangan menonaktif
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Test suite menguji kedua model AI asli (2×/2.5×/3×/3.5×/4×/4.5× dan empat mode), konsistensi tile,
+Test suite menguji kedua model AI asli (1.5×/2×/2.5×/3×/3.5×/4×/4.5×/5×/5.5× dan empat mode), konsistensi tile,
 PNG alpha, format JPG/WEBP, DPI, batas compression, queue/control/recovery,
 collision-safe naming, upload/download, ZIP final-only, dan proteksi request lokal.
 Test memakai folder sementara; output produksi tidak disentuh. Pada Windows:
 `.venv\Scripts\python.exe -m unittest discover -s tests -v`.
 
 Arsitektur/model upstream: lihat [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+
+## Kompresi terpisah dan panduan printable
+
+**COMPRESS ONLY** memproses file tanpa AI dan tanpa mengubah jumlah piksel.
+Pilih preset tersebut atau Proses → Compress Only. Aktifkan **File lebih kecil**
+untuk JPG/WEBP pada model mana pun, pilih Maximum dan target MB bila perlu.
+Profil hemat memakai JPG 4:2:0, quality awal Light/Balanced/Maximum 92/86/80
+serta floor 85/72/65. Profil detail lama tetap tersedia dengan toggle hemat OFF.
+PNG tetap lossless; format transparan tidak otomatis menjadi JPG. Target tidak
+selalu bisa dicapai; aplikasi memberi warning. Untuk format asli dengan DPI OFF,
+Compress Only mempertahankan file sumber jika encoding justru lebih besar.
+DPI ON/konversi format dapat menambah metadata/ukuran, jadi pengecualian ini
+memprioritaskan permintaan metadata/format pengguna.
+
+Untuk printable, pilih preset **PRINT A4** atau **PRINT US LETTER**, tambahkan file,
+pilih baris Waiting, lalu klik **Rekomendasikan skala untuk yang dipilih**.
+Rekomendasi dihitung per gambar, jadi batch berbeda resolusi bisa mendapat skala berbeda.
+
+- **A4**: 210×297 mm, target **2480×3508 px**, metadata **300 DPI**.
+- **US Letter**: 8.5×11 inch, target **2550×3300 px**, metadata **300 DPI**.
+- Landscape menggunakan dimensi yang ditukar. Skala terkecil yang memenuhi kedua
+  sisi disarankan; misalnya Letter 1275×1650 → 2×, A4 1700×2400 → 1.5×.
+- Sumber yang sudah mencapai target memakai Compress Only, tanpa memperbesar lagi.
+  Jika bahkan 5.5× belum cukup, aplikasi memberi pesan, bukan menjanjikan print siap.
+- Tidak ada crop/stretch/padding otomatis. Rasio kertas yang berbeda ditandai;
+  cetak dengan margin agar desain tidak terpotong. Indikator PPI memakai estimasi
+  konservatif untuk memenuhi kedua sisi kertas, bukan pengukuran setting printer.
+- 300 PPI adalah target cetak umum, bukan jaminan penjualan, penilaian Etsy, atau
+  kualitas detail sumber. Metadata 300 DPI tidak menambah detail. Periksa teks,
+  garis, warna, dan hasil cetak sebelum menyatakan produk siap cetak.
+- Pilihan kertas saja memberi panduan; klik rekomendasi untuk menerapkan skala
+  pada Waiting. Apply to selected waiting masih tersedia untuk pengaturan manual.
